@@ -1,0 +1,33 @@
+name: Daily Instapaper News Sync
+
+on:
+  schedule:
+    # Runs at 10:30 UTC (6:30 AM EDT / 7:30 AM EST).
+    # Adjust this cron expression if your timezone offset changes.
+    - cron: '30 10 * * *'
+  workflow_dispatch: # Allows you to run it manually from the GitHub Actions tab
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Curator Script
+        env:
+          INSTAPAPER_USERNAME: ${{ secrets.INSTAPAPER_USERNAME }}
+          INSTAPAPER_PASSWORD: ${{ secrets.INSTAPAPER_PASSWORD }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python sync_to_instapaper.py --auto
