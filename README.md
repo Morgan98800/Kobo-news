@@ -1,4 +1,4 @@
-# Instapaper Daily News Curator & Sync
+# Kobo News
 
 An automated system to fetch, select, and sync the best 5 European Union (EU) and policy news articles to your Instapaper account every morning. This is designed to sync seamlessly to your Kobo Clara Colour reader so you can start reading right after waking up.
 
