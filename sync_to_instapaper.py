@@ -8,6 +8,8 @@ import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
 import warnings
+import datetime
+import email.utils
 from dotenv import load_dotenv
 
 # Suppress all python warnings (e.g. LibreSSL deprecations, Google SDK deprecations)
@@ -18,6 +20,19 @@ load_dotenv(override=True)
 
 # Instapaper API Endpoint
 INSTAPAPER_ADD_URL = "https://www.instapaper.com/api/add"
+
+def is_within_24_hours(pub_date_str):
+    """Check if an RFC 822 pubDate string is within the last 24 hours."""
+    if not pub_date_str:
+        return True
+    try:
+        dt = email.utils.parsedate_to_datetime(pub_date_str)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        return (now - dt).total_seconds() <= 24 * 3600
+    except Exception:
+        return True
 
 def fetch_rss_items(url):
     """Fetch and parse RSS items from a feed URL."""
@@ -41,16 +56,16 @@ def fetch_rss_items(url):
                 
                 # Simple cleanup of HTML in description if present
                 if desc_text:
-                    # Strip basic HTML tags
                     import re
                     desc_text = re.sub('<[^<]+?>', '', desc_text).strip()
 
-                items.append({
-                    'title': title_text,
-                    'link': link_text,
-                    'description': desc_text,
-                    'pub_date': pub_date_text
-                })
+                if is_within_24_hours(pub_date_text):
+                    items.append({
+                        'title': title_text,
+                        'link': link_text,
+                        'description': desc_text,
+                        'pub_date': pub_date_text
+                    })
     except Exception as e:
         print(f"Error fetching feed {url}: {e}", file=sys.stderr)
     return items
