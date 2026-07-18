@@ -1,7 +1,16 @@
 # Kobo News
 
-An automated system to fetch, select, and sync the best 5 European Union (EU) and policy news articles to your Instapaper account every morning. This is designed to sync seamlessly to your Kobo Clara Colour reader so you can start reading right after waking up.
+**🇬🇧 English**: This is a personal script that automatically curates the top EU policy news and syncs them to Instapaper for offline reading on a Kobo e-reader. It also deletes old articles after 2 days to save space.
 
+**🇫🇷 Français**: Il s'agit d'un script personnel qui sélectionne automatiquement les meilleures actualités politiques de l'UE et les synchronise avec Instapaper pour une lecture hors ligne sur une liseuse Kobo. Il supprime également les anciens articles après 2 jours pour gagner de la place.
+
+**🇪🇸 Español**: Este es un script personal que selecciona automáticamente las mejores noticias políticas de la UE y las sincroniza con Instapaper para leerlas sin conexión en un lector electrónico Kobo. También elimina los artículos antiguos después de 2 días para ahorrar espacio.
+
+**🇮🇹 Italiano**: Questo è uno script personale che seleziona automaticamente le migliori notizie politiche dell'UE e le sincronizza con Instapaper per la lettura offline su un e-reader Kobo. Inoltre, elimina i vecchi articoli dopo 2 giorni per risparmiare spazio.
+
+**🇩🇪 Deutsch**: Dies ist ein persönliches Skript, das automatisch die besten EU-Politiknachrichten kuratiert und sie mit Instapaper synchronisiert, um sie offline auf einem Kobo-E-Reader zu lesen. Es löscht auch alte Artikel nach 2 Tagen, um Platz zu sparen.
+
+**🇵🇹 Português**: Este é um script pessoal que seleciona automaticamente as melhores notícias políticas da UE e as sincroniza com o Instapaper para leitura offline num e-reader Kobo. Ele também exclui artigos antigos após 2 dias para economizar espaço.
 ## Features
 
 - **Multi-source fetching**: Aggregates news from Politico Europe, Euractiv, and Google News RSS (searching for `"EU news OR EU policy OR Europe politics"`).
