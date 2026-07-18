@@ -4,7 +4,7 @@ on:
   schedule:
     # Runs at 10:30 UTC (6:30 AM EDT / 7:30 AM EST).
     # Adjust this cron expression if your timezone offset changes.
-    - cron: '12 15 * * *'
+    - cron: '45 15 * * *'
   workflow_dispatch: # Allows you to run it manually from the GitHub Actions tab
 
 jobs:
