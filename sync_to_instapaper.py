@@ -82,6 +82,37 @@ def resolve_google_news_url(url):
             print(f"Warning: Failed to decode Google News URL using library ({e}). Using raw URL.", file=sys.stderr)
     return url
 
+def get_unlocked_archive_url(url):
+    """
+    Checks if a URL is from a known paywalled publisher or if an archive snapshot exists.
+    Returns the Wayback Machine / Archive URL if available, otherwise returns the original URL.
+    """
+    paywalled_domains = [
+        "ft.com", "wsj.com", "bloomberg.com", "economist.com", 
+        "foreignaffairs.com", "thetimes.co.uk", "nytimes.com", "telegraph.co.uk"
+    ]
+    
+    domain = urllib.parse.urlparse(url).netloc.lower()
+    is_paywalled = any(p in domain for p in paywalled_domains)
+    
+    if is_paywalled:
+        try:
+            api_url = f"https://archive.org/wayback/available?url={urllib.parse.quote(url)}"
+            req = urllib.request.Request(api_url, headers={'User-Agent': 'Mozilla/5.0'})
+            context = ssl._create_unverified_context()
+            with urllib.request.urlopen(req, context=context, timeout=4) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                snapshots = data.get('archived_snapshots', {})
+                closest = snapshots.get('closest', {})
+                if closest.get('available') and closest.get('url'):
+                    archive_url = closest['url']
+                    print(f"  [Archive Unlocked] Found Wayback mirror for {domain}: {archive_url}")
+                    return archive_url
+        except Exception as e:
+            print(f"  [Archive Check] Could not fetch archive for {url}: {e}", file=sys.stderr)
+            
+    return url
+
 def select_articles_with_gemini(articles, api_key):
     """Use Gemini API to select the best 5 articles."""
     try:
@@ -464,8 +495,9 @@ def main():
             title = art.get('title')
             url = art.get('link')
             resolved_url = resolve_google_news_url(url)
-            print(f"- Adding: {title} ({resolved_url})")
-            if sync_to_instapaper(username, password, resolved_url, title):
+            final_url = get_unlocked_archive_url(resolved_url)
+            print(f"- Adding: {title} ({final_url})")
+            if sync_to_instapaper(username, password, final_url, title):
                 success_count += 1
                 
         print(f"Successfully curated and synced {success_count} articles to Instapaper.")
