@@ -131,89 +131,206 @@ Return only the JSON object. Do not include markdown formatting or backticks aro
         print(f"Error using Gemini API for selection: {e}. Falling back to keyword scoring algorithm.", file=sys.stderr)
         return select_articles_by_keyword_scoring(articles, top_n=5)
 
-def select_articles_by_keyword_scoring(articles, top_n=5):
-    """
-    Scores and ranks articles based on keyword matching tailored to political risk,
-    transatlantic relations, EU-China de-risking, and Francophone Africa.
-    """
+def extract_source_domain(article):
+    """Extract clean source publisher name/domain from Google News title or direct link."""
+    link = article.get('link', '')
+    title = article.get('title', '')
+    
+    source = "unknown"
+    # 1. Google News RSS titles format: "Headline text - Source Name"
+    if ' - ' in title:
+        source = title.rsplit(' - ', 1)[1].strip().lower()
+        if source.startswith("www."):
+            source = source[4:]
+    # 2. Direct feed URL domain fallback
+    elif link and "news.google.com" not in link:
+        domain = urllib.parse.urlparse(link).netloc.lower()
+        if domain.startswith("www."):
+            domain = domain[4:]
+        source = domain
+
+    # Normalize brand variants (e.g. politico.com / politico.eu / politico -> politico)
+    if "politico" in source:
+        return "politico"
+
+    return source
+
+def score_articles(articles, profile="political_risk"):
+    """Scores articles based on topic-specific keyword matching."""
     import re
     
-    # Weights reflecting priority order
-    weights = {
-        'eu_institutional': 10,
-        'transatlantic': 9,
-        'eu_china': 8,
-        'geoeconomics': 7,
-        'francophone_africa': 6,
-        'negative': -20 # Heavily penalize sports/entertainment/domestic filler
-    }
-    
-    keywords = {
-        'eu_institutional': [
-            r'\beu\b', r'\beuropean union\b', r'\bcommission\b', r'\bparliament\b', 
-            r'\bcouncil\b', r'\bcourt of justice\b', r'\bcjeu\b', r'\blegislation\b', 
-            r'\benlargement\b', r'\bbrussels\b', r'\bvon der leyen\b', r'\bmetsola\b'
-        ],
-        'transatlantic': [
-            r'\bus\b', r'\bunited states\b', r'\btransatlantic\b', r'\bnato\b', 
-            r'\bwashington\b', r'\bbiden\b', r'\btrump\b', r'\btrade dispute\b', 
-            r'\bira\b', r'\binflation reduction act\b', r'\bdefense\b'
-        ],
-        'eu_china': [
-            r'\bchina\b', r'\bbeijing\b', r'\bde-risking\b', r'\bfdi screening\b', 
-            r'\bexport controls\b', r'\bsupply chains\b', r'\bcritical minerals\b', 
-            r'\btariffs\b', r'\bevs\b', r'\belectric vehicles\b'
-        ],
-        'geoeconomics': [
-            r'\bsanctions\b', r'\bsovereign risk\b', r'\bregulatory\b', r'\bgeoeconomic\b',
-            r'\binvestment\b', r'\btrade war\b', r'\bgeopolitics\b', r'\bmercosur\b'
-        ],
-        'francophone_africa': [
-            r'\bafrica\b', r'\bsahel\b', r'\bmali\b', r'\bniger\b', r'\bburkina faso\b',
-            r'\bsenegal\b', r'\bcote d\'ivoire\b', r'\bivory coast\b', r'\bfrance\b',
-            r'\bmacron\b', r'\bparis\b', r'\bfrancophone\b', r'\becowas\b'
-        ],
-        'negative': [
-            r'\bsports\b', r'\bfootball\b', r'\bcelebrity\b', r'\bentertainment\b',
-            r'\bmurder\b', r'\baccident\b', r'\bgossip\b', r'\breal madrid\b', r'\bfifa\b'
-        ]
-    }
-    
-    # Compile regexes for performance
-    compiled_keywords = {
-        category: [re.compile(kw, re.IGNORECASE) for kw in kws]
-        for category, kws in keywords.items()
-    }
-    
-    scored_articles = []
+    if profile == "political_risk":
+        weights = {
+            'eu_institutional': 10, 'transatlantic': 9, 'eu_china': 8,
+            'geoeconomics': 7, 'francophone_africa': 6, 'negative': -20
+        }
+        keywords = {
+            'eu_institutional': [
+                r'\beu\b', r'\beuropean union\b', r'\bcommission\b', r'\bparliament\b', 
+                r'\bcouncil\b', r'\bcourt of justice\b', r'\bcjeu\b', r'\blegislation\b', 
+                r'\benlargement\b', r'\bbrussels\b', r'\bvon der leyen\b', r'\bmetsola\b'
+            ],
+            'transatlantic': [
+                r'\bus\b', r'\bunited states\b', r'\btransatlantic\b', r'\bnato\b', 
+                r'\bwashington\b', r'\bbiden\b', r'\btrump\b', r'\btrade dispute\b', 
+                r'\bira\b', r'\binflation reduction act\b', r'\bdefense\b'
+            ],
+            'eu_china': [
+                r'\bchina\b', r'\bbeijing\b', r'\bde-risking\b', r'\bfdi screening\b', 
+                r'\bexport controls\b', r'\bsupply chains\b', r'\bcritical minerals\b', 
+                r'\btariffs\b', r'\bevs\b', r'\belectric vehicles\b'
+            ],
+            'geoeconomics': [
+                r'\bsanctions\b', r'\bsovereign risk\b', r'\bregulatory\b', r'\bgeoeconomic\b',
+                r'\binvestment\b', r'\btrade war\b', r'\bgeopolitics\b', r'\bmercosur\b'
+            ],
+            'francophone_africa': [
+                r'\bafrica\b', r'\bsahel\b', r'\bmali\b', r'\bniger\b', r'\bburkina faso\b',
+                r'\bsenegal\b', r'\bcote d\'ivoire\b', r'\bivory coast\b', r'\bfrance\b',
+                r'\bmacron\b', r'\bparis\b', r'\bfrancophone\b', r'\becowas\b'
+            ],
+            'negative': [
+                r'\bsports\b', r'\bfootball\b', r'\bcelebrity\b', r'\bentertainment\b',
+                r'\bmurder\b', r'\baccident\b', r'\bgossip\b', r'\breal madrid\b', r'\bfifa\b'
+            ]
+        }
+    elif profile == "ai_policy":
+        weights = {'ai_policy': 10, 'chip_geo': 8, 'negative': -20}
+        keywords = {
+            'ai_policy': [
+                r'\bai act\b', r'\bai regulation\b', r'\bai policy\b', r'\bexport controls\b', 
+                r'\bgovernance\b', r'\bchips act\b', r'\bexecutive order\b', r'\bcompliance\b', 
+                r'\bftc\b', r'\bdoj\b'
+            ],
+            'chip_geo': [
+                r'\bnvidia\b', r'\btsmc\b', r'\basml\b', r'\bsemiconductor\b', 
+                r'\badvanced chips\b', r'\bgpu\b', r'\bnational security\b'
+            ],
+            'negative': [
+                r'\bsports\b', r'\bcelebrity\b', r'\bcrypto\b', r'\bnft\b', r'\bgossip\b'
+            ]
+        }
+    elif profile == "ai_industry":
+        weights = {'models_tech': 10, 'industry_compute': 7, 'negative': -20}
+        keywords = {
+            'models_tech': [
+                r'\bopenai\b', r'\banthropic\b', r'\bgemini\b', r'\bchatgpt\b', 
+                r'\bclaude\b', r'\bllm\b', r'\bdeepmind\b', r'\bmistral\b', 
+                r'\bllama\b', r'\bmodel release\b', r'\breasoning model\b'
+            ],
+            'industry_compute': [
+                r'\bstartup\b', r'\bfunding\b', r'\bdatacenter\b', r'\bcompute\b', 
+                r'\bsupercomputer\b', r'\bapple intelligence\b'
+            ],
+            'negative': [
+                r'\bsports\b', r'\bcrypto\b', r'\bnft\b', r'\bscam\b', r'\bgossip\b'
+            ]
+        }
+
+    compiled = {cat: [re.compile(kw, re.IGNORECASE) for kw in kws] for cat, kws in keywords.items()}
+    scored = []
     
     for art in articles:
-        title = art.get('title', '')
-        desc = art.get('description', '')
-        text_to_score = f"{title} {desc}"
-        
+        text = f"{art.get('title', '')} {art.get('description', '')}"
         score = 0
+        for cat, regexes in compiled.items():
+            for r in regexes:
+                m = len(r.findall(text))
+                if m > 0:
+                    score += m * weights[cat]
+                    if r.search(art.get('title', '')):
+                        score += weights[cat]
+        art_copy = art.copy()
+        art_copy['_score'] = score
+        scored.append(art_copy)
         
-        for category, regex_list in compiled_keywords.items():
-            for regex in regex_list:
-                # Count occurrences to reward articles covering topics in-depth
-                matches = len(regex.findall(text_to_score))
-                if matches > 0:
-                    score += matches * weights[category]
-                    # Bonus multiplier if the keyword is front-and-center in the title
-                    if len(regex.findall(title)) > 0:
-                        score += weights[category] 
-                    
-        art_with_score = art.copy()
-        art_with_score['_score'] = score
-        scored_articles.append(art_with_score)
+    scored.sort(key=lambda x: x.get('_score', 0), reverse=True)
+    return scored
+
+def select_with_diversity(scored_articles, count, max_per_source=2, pool_name="political_risk", global_sources=None):
+    """
+    Selects `count` articles from `scored_articles`, capping articles per source domain
+    and favoring unrepresented publishers for similarly-scored articles.
+    """
+    if global_sources is None:
+        global_sources = {}
         
-    # Sort by score descending. 
-    # Python's Timsort is stable, so articles with the same score maintain chronological order.
-    scored_articles.sort(key=lambda x: x.get('_score', 0), reverse=True)
+    selected = []
+    pool_sources = {}
+    candidates = list(scored_articles)
     
-    # As requested, even if scores are low, we take the top N available.
-    return scored_articles[:top_n]
+    while len(selected) < count and candidates:
+        # Find candidates whose source has not hit the per-pool cap
+        valid_candidates = [
+            art for art in candidates 
+            if pool_sources.get(extract_source_domain(art), 0) < max_per_source
+        ]
+        
+        if not valid_candidates:
+            # Relax cap if strictly enforcing it would leave slots empty
+            needed = count - len(selected)
+            print(f"Notice: Relaxed source cap of {max_per_source} for '{pool_name}' pool. Adding {needed} remaining top article(s).")
+            for art in candidates[:needed]:
+                selected.append(art)
+                domain = extract_source_domain(art)
+                global_sources[domain] = global_sources.get(domain, 0) + 1
+            break
+            
+        # Get highest score among valid candidates
+        max_score = max(art.get('_score', 0) for art in valid_candidates)
+        top_candidates = [art for art in valid_candidates if art.get('_score', 0) == max_score]
+        
+        # Favor a candidate from a source not yet represented in today's global picks
+        chosen = None
+        for art in top_candidates:
+            domain = extract_source_domain(art)
+            if global_sources.get(domain, 0) == 0:
+                chosen = art
+                break
+                
+        if not chosen:
+            chosen = top_candidates[0]
+            
+        selected.append(chosen)
+        candidates.remove(chosen)
+        
+        domain = extract_source_domain(chosen)
+        pool_sources[domain] = pool_sources.get(domain, 0) + 1
+        global_sources[domain] = global_sources.get(domain, 0) + 1
+        
+    return selected
+
+def select_articles_by_keyword_scoring(articles, top_n=5):
+    """Legacy compatibility function for political risk selection."""
+    scored = score_articles(articles, profile="political_risk")
+    return select_with_diversity(scored, count=top_n, max_per_source=2, pool_name="Political Risk")
+
+def curate_all_articles(pol_articles, ai_policy_articles, ai_industry_articles):
+    """
+    Curates 8 total articles:
+    - 5 Political Risk / EU / Transatlantic (max 2 per domain)
+    - 2 AI Policy / Regulation (max 1 per domain)
+    - 1 General AI Industry News
+    """
+    global_sources = {}
+    
+    # 1. Political Risk Pool (5 articles)
+    scored_pol = score_articles(pol_articles, profile="political_risk")
+    selected_pol = select_with_diversity(scored_pol, count=5, max_per_source=2, pool_name="Political Risk", global_sources=global_sources)
+    
+    # 2. AI Policy Pool (2 articles)
+    seen_urls = {a['link'] for a in selected_pol}
+    filt_ai_pol = [a for a in ai_policy_articles if a['link'] not in seen_urls]
+    scored_ai_pol = score_articles(filt_ai_pol, profile="ai_policy")
+    selected_ai_pol = select_with_diversity(scored_ai_pol, count=2, max_per_source=1, pool_name="AI Policy", global_sources=global_sources)
+    
+    # 3. AI Industry Pool (1 article)
+    seen_urls.update({a['link'] for a in selected_ai_pol})
+    filt_ai_ind = [a for a in ai_industry_articles if a['link'] not in seen_urls]
+    scored_ai_ind = score_articles(filt_ai_ind, profile="ai_industry")
+    selected_ai_ind = select_with_diversity(scored_ai_ind, count=1, max_per_source=1, pool_name="AI Industry", global_sources=global_sources)
+    
+    return selected_pol + selected_ai_pol + selected_ai_ind
 
 def sync_to_instapaper(username, password, url, title=None):
     """Add a URL to Instapaper via Simple API."""
@@ -233,7 +350,6 @@ def sync_to_instapaper(username, password, url, title=None):
     )
     
     try:
-        # Instapaper API uses basic SSL; bypass verification if system certs are old
         context = ssl._create_unverified_context()
         with urllib.request.urlopen(req, context=context) as response:
             status = response.getcode()
@@ -269,17 +385,14 @@ def main():
         sys.exit(1)
         
     if args.list:
-        # Fetch RSS feeds and list them
-        feeds = [
+        pol_feeds = [
             "https://www.politico.eu/section/policy/feed/",
             "https://news.google.com/rss/search?q=EU+news+OR+EU+policy+OR+Europe+politics&hl=en-US&gl=US&ceid=US:en"
         ]
-        
         all_articles = []
-        for feed in feeds:
+        for feed in pol_feeds:
             all_articles.extend(fetch_rss_items(feed))
             
-        # Deduplicate
         seen_titles = set()
         deduped = []
         for art in all_articles:
@@ -292,7 +405,6 @@ def main():
         sys.exit(0)
         
     elif args.urls:
-        # Agent Mode: Syncing URLs provided by command line
         print(f"Agent Mode: Syncing {len(args.urls)} provided URLs to Instapaper...")
         success_count = 0
         for url in args.urls:
@@ -302,45 +414,51 @@ def main():
         print(f"Synced {success_count}/{len(args.urls)} articles to Instapaper.")
         
     elif args.auto:
-        # Standalone Mode: Fetch feeds, select top 5 (Gemini/Fallback), and sync
-        print("Fetching RSS feeds...")
-        feeds = [
+        print("Fetching RSS feeds across categories...")
+        pol_feeds = [
             "https://www.politico.eu/section/policy/feed/",
             "https://news.google.com/rss/search?q=EU+news+OR+EU+policy+OR+Europe+politics&hl=en-US&gl=US&ceid=US:en"
         ]
+        ai_policy_feeds = [
+            "https://news.google.com/rss/search?q=%22AI+regulation%22+OR+%22AI+Act%22+OR+%22AI+policy%22+OR+%22AI+export+controls%22+OR+%22AI+governance%22+OR+%22chips+act%22&hl=en-US&gl=US&ceid=US:en"
+        ]
+        ai_industry_feeds = [
+            "https://news.google.com/rss/search?q=%22artificial+intelligence%22+OR+%22AI+model%22+OR+%22AI+industry%22+OR+OpenAI+OR+Anthropic&hl=en-US&gl=US&ceid=US:en"
+        ]
         
-        all_articles = []
-        for feed in feeds:
-            all_articles.extend(fetch_rss_items(feed))
+        pol_raw, ai_pol_raw, ai_ind_raw = [], [], []
+        for feed in pol_feeds:
+            pol_raw.extend(fetch_rss_items(feed))
+        for feed in ai_policy_feeds:
+            ai_pol_raw.extend(fetch_rss_items(feed))
+        for feed in ai_industry_feeds:
+            ai_ind_raw.extend(fetch_rss_items(feed))
             
-        print(f"Fetched {len(all_articles)} total articles.")
+        print(f"Fetched {len(pol_raw)} Political, {len(ai_pol_raw)} AI Policy, and {len(ai_ind_raw)} AI Industry articles.")
         
-        if not all_articles:
-            print("No articles found to sync.", file=sys.stderr)
-            sys.exit(1)
+        def dedup(articles):
+            seen = set()
+            out = []
+            for art in articles:
+                tn = art['title'].lower().strip()
+                if tn not in seen:
+                    seen.add(tn)
+                    out.append(art)
+            return out
             
-        # Deduplicate
-        seen_titles = set()
-        deduped = []
-        for art in all_articles:
-            title_norm = art['title'].lower().strip()
-            if title_norm not in seen_titles:
-                seen_titles.add(title_norm)
-                deduped.append(art)
-                
-        print(f"Deduplicated to {len(deduped)} articles.")
+        pol_deduped = dedup(pol_raw)
+        ai_pol_deduped = dedup(ai_pol_raw)
+        ai_ind_deduped = dedup(ai_ind_raw)
         
-        # Select best 5
         gemini_key = os.environ.get("GEMINI_API_KEY")
         if gemini_key and gemini_key.strip() != "" and "your_gemini_api_key" not in gemini_key:
-            print("Selecting best 5 articles using Gemini API...")
-            selected = select_articles_with_gemini(deduped, gemini_key)
+            print("Selecting articles using Gemini API...")
+            selected = select_articles_with_gemini(pol_deduped, gemini_key)
         else:
-            print("No valid GEMINI_API_KEY found. Falling back to keyword scoring algorithm...")
-            selected = select_articles_by_keyword_scoring(deduped, top_n=5)
+            print("Selecting 8 articles with topic scoring & source diversity...")
+            selected = curate_all_articles(pol_deduped, ai_pol_deduped, ai_ind_deduped)
             
-        # Resolve Google News links for only the chosen 5 to save network calls
-        print("Resolving and syncing selected articles...")
+        print("Resolving and syncing selected 8 articles...")
         success_count = 0
         for art in selected:
             title = art.get('title')
