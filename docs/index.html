@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kobo News &bull; Daily Instapaper Digest</title>
+  <meta name="description" content="Personal daily curated briefing synced to Instapaper and Kobo e-reader." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;0,6..72,700;1,6..72,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg: #f8f6f0;
+      --bg-card: #ffffff;
+      --border: #e2ddd3;
+      --border-hover: #c5bba8;
+      --text: #1a1918;
+      --text-muted: #646059;
+      --accent: #111827;
+      --header-bg: rgba(248, 246, 240, 0.92);
+      --badge-bg: #eae5d9;
+      --shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+      --shadow-hover: 0 10px 30px rgba(0, 0, 0, 0.08);
+      --pill-active-bg: #1a1918;
+      --pill-active-text: #ffffff;
+      --transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    [data-theme="dark"] {
+      --bg: #0e1117;
+      --bg-card: #161b22;
+      --border: #30363d;
+      --border-hover: #484f58;
+      --text: #f0f6fc;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --header-bg: rgba(14, 17, 23, 0.92);
+      --badge-bg: #21262d;
+      --shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      --shadow-hover: 0 10px 30px rgba(0, 0, 0, 0.5);
+      --pill-active-bg: #f0f6fc;
+      --pill-active-text: #0e1117;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      transition: background-color 0.3s ease, color 0.3s ease;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Container */
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+      width: 100%;
+    }
+
+    /* Header */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      background-color: var(--header-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 1.2rem 0;
+      transition: var(--transition);
+    }
+
+    .header-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: baseline;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: var(--text);
+    }
+
+    .brand-title {
+      font-family: 'Newsreader', serif;
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+
+    .brand-badge {
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.2rem 0.55rem;
+      border-radius: 9999px;
+      background: var(--badge-bg);
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .theme-toggle {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      cursor: pointer;
+      padding: 0.5rem;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      transition: var(--transition);
+    }
+
+    .theme-toggle:hover {
+      border-color: var(--border-hover);
+      transform: scale(1.05);
+    }
+
+    /* Hero / Subhead */
+    .hero {
+      padding: 3rem 0 2rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 2rem;
+    }
+
+    .hero-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .hero-heading {
+      font-family: 'Newsreader', serif;
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 600;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+    }
+
+    .hero-meta {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      display: inline-block;
+      box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(0.9); }
+    }
+
+    /* Filters & Controls */
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 1.2rem;
+    }
+
+    .search-wrapper {
+      position: relative;
+      width: 100%;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 0.75rem 1rem 0.75rem 2.75rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.95rem;
+      outline: none;
+      transition: var(--transition);
+    }
+
+    .search-input:focus {
+      border-color: var(--text);
+      box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    .filter-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .filter-pill {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 0.4rem 0.9rem;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: var(--transition);
+      user-select: none;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .filter-pill:hover {
+      border-color: var(--border-hover);
+      color: var(--text);
+    }
+
+    .filter-pill.active {
+      background: var(--pill-active-bg);
+      color: var(--pill-active-text);
+      border-color: var(--pill-active-bg);
+    }
+
+    /* Grid */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 4rem;
+    }
+
+    /* Article Card */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.75rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: var(--transition);
+      box-shadow: var(--shadow);
+      position: relative;
+    }
+
+    .card:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-hover);
+      border-color: var(--border-hover);
+    }
+
+    .card-top {
+      margin-bottom: 1.25rem;
+    }
+
+    .card-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .publisher-tag {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 0.25rem 0.6rem;
+      border-radius: 6px;
+      background: var(--badge-bg);
+      color: var(--text);
+    }
+
+    .publisher-lemonde { background: #e0f2fe; color: #0369a1; }
+    .publisher-ft { background: #ffe4e6; color: #be123c; }
+    .publisher-economist { background: #fee2e2; color: #b91c1c; }
+    .publisher-politico { background: #f1f5f9; color: #0f172a; }
+    .publisher-tech { background: #fef3c7; color: #b45309; }
+
+    [data-theme="dark"] .publisher-lemonde { background: #082f49; color: #7dd3fc; }
+    [data-theme="dark"] .publisher-ft { background: #4c0519; color: #fda4af; }
+    [data-theme="dark"] .publisher-economist { background: #450a0a; color: #fca5a5; }
+    [data-theme="dark"] .publisher-politico { background: #1e293b; color: #cbd5e1; }
+    [data-theme="dark"] .publisher-tech { background: #451a03; color: #fde68a; }
+
+    .card-date {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .card-title {
+      font-family: 'Newsreader', serif;
+      font-size: 1.35rem;
+      font-weight: 600;
+      line-height: 1.3;
+      margin-bottom: 0.75rem;
+      color: var(--text);
+      text-decoration: none;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .card-title:hover {
+      text-decoration: underline;
+    }
+
+    .card-excerpt {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .card-bottom {
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .card-link {
+      font-size: 0.825rem;
+      font-weight: 600;
+      color: var(--text);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      transition: var(--transition);
+    }
+
+    .card-link:hover {
+      gap: 0.55rem;
+    }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 5rem 1rem;
+      grid-column: 1 / -1;
+    }
+
+    .empty-state h3 {
+      font-family: 'Newsreader', serif;
+      font-size: 1.75rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .empty-state p {
+      color: var(--text-muted);
+    }
+
+    /* Footer */
+    footer {
+      margin-top: auto;
+      border-top: 1px solid var(--border);
+      padding: 2.5rem 0;
+      background: var(--bg);
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .footer-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+      .hero {
+        padding: 2rem 0 1.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="container header-content">
+      <a href="#" class="brand">
+        <span class="brand-title">Kobo News</span>
+        <span class="brand-badge">Instapaper Queue</span>
+      </a>
+      <div class="header-actions">
+        <button id="themeToggle" class="theme-toggle" aria-label="Toggle dark mode">
+          <svg id="moonIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>
+          <svg id="sunIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="M4.93 4.93l1.41 1.41"></path><path d="M17.66 17.66l1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="M6.34 17.66l-1.41 1.41"></path><path d="M19.07 4.93l-1.41 1.41"></path></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <div class="hero-top">
+        <h1 class="hero-heading">Morning Intelligence</h1>
+        <div class="hero-meta">
+          <span class="live-dot"></span>
+          <span id="lastUpdated">Loading queue...</span>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="search-wrapper">
+          <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+          <input type="text" id="searchInput" class="search-input" placeholder="Search headlines, keywords, or topics..." autocomplete="off" />
+        </div>
+
+        <div class="filter-pills" id="filterPills">
+          <button class="filter-pill active" data-filter="all">All Sources (<span id="countAll">0</span>)</button>
+          <button class="filter-pill" data-filter="lemonde">Le Monde</button>
+          <button class="filter-pill" data-filter="ft">Financial Times</button>
+          <button class="filter-pill" data-filter="economist">The Economist</button>
+          <button class="filter-pill" data-filter="politico">Politico Europe</button>
+          <button class="filter-pill" data-filter="tech">Tech &amp; AI</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="grid" id="articlesGrid">
+      <!-- Injected via JavaScript -->
+    </div>
+  </main>
+
+  <footer>
+    <div class="container footer-content">
+      <p>Curated automatically with Gemini and synced to Kobo e-reader via Instapaper.</p>
+      <p><span id="footerCount">0</span> articles in active rotation (2-day auto-expiration).</p>
+    </div>
+  </footer>
+
+  <script>
+    // State
+    let allArticles = [];
+    let activeFilter = 'all';
+    let searchQuery = '';
+
+    // Theme Management
+    const themeToggle = document.getElementById('themeToggle');
+    const moonIcon = document.getElementById('moonIcon');
+    const sunIcon = document.getElementById('sunIcon');
+
+    function initTheme() {
+      const saved = localStorage.getItem('kobo_theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      setTheme(saved);
+    }
+
+    function setTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('kobo_theme', theme);
+      if (theme === 'dark') {
+        moonIcon.style.display = 'none';
+        sunIcon.style.display = 'block';
+      } else {
+        moonIcon.style.display = 'block';
+        sunIcon.style.display = 'none';
+      }
+    }
+
+    themeToggle.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme') || 'light';
+      setTheme(current === 'dark' ? 'light' : 'dark');
+    });
+
+    initTheme();
+
+    // Data Fetching
+    async function loadArticles() {
+      try {
+        const res = await fetch('data.json?v=' + Date.now());
+        if (!res.ok) throw new Error('Failed to load data.json');
+        const data = await res.json();
+        
+        allArticles = data.articles || [];
+        document.getElementById('lastUpdated').textContent = 'Last synced: ' + data.last_updated;
+        document.getElementById('countAll').textContent = allArticles.length;
+        document.getElementById('footerCount').textContent = allArticles.length;
+        
+        render();
+      } catch (e) {
+        console.error(e);
+        document.getElementById('articlesGrid').innerHTML = `
+          <div class="empty-state">
+            <h3>No articles synced yet</h3>
+            <p>Articles will appear here once the first daily sync completes.</p>
+          </div>
+        `;
+      }
+    }
+
+    // Filter & Search Logic
+    function render() {
+      const grid = document.getElementById('articlesGrid');
+      
+      const filtered = allArticles.filter(art => {
+        // Tag filter
+        const matchesTag = (activeFilter === 'all') || (art.tag === activeFilter);
+        
+        // Search filter
+        const q = searchQuery.toLowerCase();
+        const matchesSearch = !q || 
+          (art.title && art.title.toLowerCase().includes(q)) ||
+          (art.description && art.description.toLowerCase().includes(q)) ||
+          (art.publisher && art.publisher.toLowerCase().includes(q));
+          
+        return matchesTag && matchesSearch;
+      });
+
+      if (filtered.length === 0) {
+        grid.innerHTML = `
+          <div class="empty-state">
+            <h3>No articles found</h3>
+            <p>Try adjusting your search query or selecting a different source filter.</p>
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = filtered.map(art => {
+        let tagClass = 'publisher-politico';
+        if (art.tag === 'lemonde') tagClass = 'publisher-lemonde';
+        else if (art.tag === 'ft') tagClass = 'publisher-ft';
+        else if (art.tag === 'economist') tagClass = 'publisher-economist';
+        else if (art.tag === 'tech') tagClass = 'publisher-tech';
+
+        return `
+          <article class="card">
+            <div class="card-top">
+              <div class="card-meta">
+                <span class="publisher-tag ${tagClass}">${art.publisher}</span>
+                <span class="card-date">${art.formatted_date.split(' - ')[0]}</span>
+              </div>
+              <a href="${art.url}" target="_blank" rel="noopener" class="card-title">${escapeHtml(art.title)}</a>
+              ${art.description ? `<p class="card-excerpt">${escapeHtml(art.description)}</p>` : ''}
+            </div>
+            <div class="card-bottom">
+              <span class="card-date">${art.lang === 'FR' ? '🇫🇷 Français' : '🇬🇧 English'}</span>
+              <a href="${art.url}" target="_blank" rel="noopener" class="card-link">
+                Read Source
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17l9.2-9.2M17 17V7H7"/></svg>
+              </a>
+            </div>
+          </article>
+        `;
+      }).join('');
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    // Event Listeners
+    document.getElementById('searchInput').addEventListener('input', (e) => {
+      searchQuery = e.target.value;
+      render();
+    });
+
+    document.getElementById('filterPills').addEventListener('click', (e) => {
+      const btn = e.target.closest('.filter-pill');
+      if (!btn) return;
+      
+      document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      activeFilter = btn.getAttribute('data-filter');
+      render();
+    });
+
+    loadArticles();
+  </script>
+</body>
+</html>

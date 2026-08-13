@@ -118,16 +118,20 @@ To schedule, we set up a recurring task that triggers every morning at 6:30 AM.
 ### Option C: Local macOS Crontab
 If you prefer a standard local cron job on your machine (requires `GEMINI_API_KEY` in `.env`):
 
-1. Open your crontab:
-   ```bash
-   crontab -e
-   ```
-2. Add the following entry to run the script every morning at 6:30 AM:
-   ```text
-   30 6 * * * cd /Users/morgancanteri/Documents/antigravity/amazing-galileo && ./venv/bin/python3 sync_to_instapaper.py --auto >> daily_sync.log 2>&1
-   ```
-
 ---
+
+## Web Dashboard (GitHub Pages)
+
+You can view your active Instapaper reading queue from any web browser on your custom GitHub Pages dashboard:
+
+1. In your GitHub repository, go to **Settings** → **Pages**.
+2. Under **Build and deployment**:
+   - **Source**: Select `Deploy from a branch`.
+   - **Branch**: Select `main` and set the folder to `/docs`.
+   - Click **Save**.
+3. Your dashboard will be live at: `https://<your-username>.github.io/<your-repo-name>/`.
+4. The dashboard automatically updates with fresh articles after every daily sync!
+
 
 ### Option D: macOS launchd Agent
 For a macOS background agent that will run even if the computer was asleep (and runs immediately upon wake-up if the time was missed):
