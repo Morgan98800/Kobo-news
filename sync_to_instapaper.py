@@ -113,35 +113,37 @@ def get_unlocked_archive_url(url):
             
     return url
 
-def select_articles_with_gemini(articles, api_key):
-    """Use Gemini API to select the best 5 articles."""
+def gemini_score_articles(articles, topic, api_key):
+    """Use Gemini API to semantically deduplicate and score articles."""
     try:
         import google.generativeai as genai
         genai.configure(api_key=api_key)
         
-        # Prepare list for prompt
         articles_list = []
         for i, art in enumerate(articles):
-            articles_list.append(f"[{i}] Title: {art['title']}\nDescription: {art['description'][:200]}\n")
+            source = extract_source_domain(art)
+            articles_list.append(f"[{i}] Publisher: {source} | Title: {art['title']}\nDescription: {art['description'][:200]}\n")
             
         articles_text = "\n".join(articles_list)
         
         model = genai.GenerativeModel("gemini-1.5-flash")
         
-        prompt = f"""You are a professional editor curating a daily briefing on European Union (EU) news and policy.
-From the following list of news articles, select the top 5 most important, high-impact, or informative articles. Prioritize policy changes, regulatory updates, major political shifts, and EU-wide decisions.
+        prompt = f"""You are a professional editor curating a daily briefing on {topic}.
+Here is a list of candidate articles. Your task is to score them for importance, quality, and relevance, and completely eliminate duplicate stories.
 
-Articles list:
-{articles_text}
+Rules:
+1. Semantic Deduplication: Identify articles covering the exact same underlying event or story. From each group of identical stories, select ONLY the single best, most informative article. Discard the rest.
+2. Scoring: For the unique articles you keep, assign a score from 1 to 100 based on how important and high-impact the article is.
 
-Return your selection in a JSON format containing a list of chosen indices, like this:
-{{
-  "selected_indices": [0, 3, 5, 8, 12]
-}}
-Return only the JSON object. Do not include markdown formatting or backticks around the JSON. Just raw JSON.
+Return your evaluation in a JSON format containing a list of dictionaries with 'index' and 'score'.
+Example:
+[
+  {{"index": 0, "score": 95}},
+  {{"index": 3, "score": 88}}
+]
+Return only the raw JSON array. Do not include markdown formatting or backticks around the JSON.
 """
-        response = model.generate_content(prompt)
-        # Clean response string in case it wrapped with markdown ```json ... ```
+        response = model.generate_content([prompt, articles_text])
         response_text = response.text.strip()
         if response_text.startswith("```"):
             response_text = response_text.split("```")[1]
@@ -150,17 +152,25 @@ Return only the JSON object. Do not include markdown formatting or backticks aro
         response_text = response_text.strip()
 
         data = json.loads(response_text)
-        selected_indices = data.get("selected_indices", [])
         
-        selected_articles = []
-        for idx in selected_indices[:5]:
-            if 0 <= idx < len(articles):
-                selected_articles.append(articles[idx])
-                
-        return selected_articles
+        scored = []
+        for i, art in enumerate(articles):
+            art_copy = art.copy()
+            art_copy['_score'] = -1
+            for item in data:
+                if item.get("index") == i:
+                    art_copy['_score'] = item.get("score", 0)
+                    break
+            scored.append(art_copy)
+            
+        scored.sort(key=lambda x: x.get('_score', 0), reverse=True)
+        return scored
     except Exception as e:
-        print(f"Error using Gemini API for selection: {e}. Falling back to keyword scoring algorithm.", file=sys.stderr)
-        return select_articles_by_keyword_scoring(articles, top_n=5)
+        print(f"Error using Gemini API for selection on topic {topic}: {e}. Falling back to -1 scores.", file=sys.stderr)
+        scored = [art.copy() for art in articles]
+        for a in scored:
+            a['_score'] = -1
+        return scored
 
 def extract_source_domain(article):
     """Extract clean source publisher name/domain from Google News title or direct link."""
@@ -336,7 +346,7 @@ def select_articles_by_keyword_scoring(articles, top_n=5):
     scored = score_articles(articles, profile="political_risk")
     return select_with_diversity(scored, count=top_n, max_per_source=2, pool_name="Political Risk")
 
-def curate_all_articles(pol_articles, ai_policy_articles, ai_industry_articles):
+def curate_all_articles(pol_articles, ai_policy_articles, ai_industry_articles, use_gemini=False, gemini_key=None):
     """
     Curates 8 total articles:
     - 5 Political Risk / EU / Transatlantic (max 2 per domain)
@@ -346,19 +356,28 @@ def curate_all_articles(pol_articles, ai_policy_articles, ai_industry_articles):
     global_sources = {}
     
     # 1. Political Risk Pool (5 articles)
-    scored_pol = score_articles(pol_articles, profile="political_risk")
+    if use_gemini and gemini_key:
+        scored_pol = gemini_score_articles(pol_articles, "EU Politics & Policy", gemini_key)
+    else:
+        scored_pol = score_articles(pol_articles, profile="political_risk")
     selected_pol = select_with_diversity(scored_pol, count=5, max_per_source=2, pool_name="Political Risk", global_sources=global_sources)
     
     # 2. AI Policy Pool (2 articles)
     seen_urls = {a['link'] for a in selected_pol}
     filt_ai_pol = [a for a in ai_policy_articles if a['link'] not in seen_urls]
-    scored_ai_pol = score_articles(filt_ai_pol, profile="ai_policy")
+    if use_gemini and gemini_key:
+        scored_ai_pol = gemini_score_articles(filt_ai_pol, "AI Regulation & Policy", gemini_key)
+    else:
+        scored_ai_pol = score_articles(filt_ai_pol, profile="ai_policy")
     selected_ai_pol = select_with_diversity(scored_ai_pol, count=2, max_per_source=1, pool_name="AI Policy", global_sources=global_sources)
     
     # 3. AI Industry Pool (1 article)
     seen_urls.update({a['link'] for a in selected_ai_pol})
     filt_ai_ind = [a for a in ai_industry_articles if a['link'] not in seen_urls]
-    scored_ai_ind = score_articles(filt_ai_ind, profile="ai_industry")
+    if use_gemini and gemini_key:
+        scored_ai_ind = gemini_score_articles(filt_ai_ind, "AI Industry & Technology", gemini_key)
+    else:
+        scored_ai_ind = score_articles(filt_ai_ind, profile="ai_industry")
     selected_ai_ind = select_with_diversity(scored_ai_ind, count=1, max_per_source=1, pool_name="AI Industry", global_sources=global_sources)
     
     return selected_pol + selected_ai_pol + selected_ai_ind
@@ -483,11 +502,11 @@ def main():
         
         gemini_key = os.environ.get("GEMINI_API_KEY")
         if gemini_key and gemini_key.strip() != "" and "your_gemini_api_key" not in gemini_key:
-            print("Selecting articles using Gemini API...")
-            selected = select_articles_with_gemini(pol_deduped, gemini_key)
+            print("Selecting articles using Gemini API with topic scoring & source diversity...")
+            selected = curate_all_articles(pol_deduped, ai_pol_deduped, ai_ind_deduped, use_gemini=True, gemini_key=gemini_key)
         else:
-            print("Selecting 8 articles with topic scoring & source diversity...")
-            selected = curate_all_articles(pol_deduped, ai_pol_deduped, ai_ind_deduped)
+            print("Selecting 8 articles with keyword scoring & source diversity...")
+            selected = curate_all_articles(pol_deduped, ai_pol_deduped, ai_ind_deduped, use_gemini=False)
             
         print("Resolving and syncing selected 8 articles...")
         success_count = 0
