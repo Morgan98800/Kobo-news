@@ -113,8 +113,27 @@ def get_unlocked_archive_url(url):
             
     return url
 
+def fetch_article_context(url, fallback_desc=""):
+    """Fetch full text using trafilatura, return a 1500-char snippet."""
+    try:
+        import urllib.request
+        import ssl
+        import trafilatura
+        
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        context = ssl._create_unverified_context()
+        with urllib.request.urlopen(req, context=context, timeout=5) as response:
+            html = response.read()
+            
+        text = trafilatura.extract(html)
+        if text:
+            return text[:1500]
+    except Exception as e:
+        print(f"Warning: Failed to extract full text for {url}: {e}", file=sys.stderr)
+    return fallback_desc
+
 def gemini_score_articles(articles, topic, api_key):
-    """Use Gemini API to semantically deduplicate and score articles."""
+    """Use Gemini API to semantically deduplicate and score articles with deep context."""
     try:
         import google.generativeai as genai
         genai.configure(api_key=api_key)
@@ -122,18 +141,23 @@ def gemini_score_articles(articles, topic, api_key):
         articles_list = []
         for i, art in enumerate(articles):
             source = extract_source_domain(art)
-            articles_list.append(f"[{i}] Publisher: {source} | Title: {art['title']}\nDescription: {art['description'][:200]}\n")
+            resolved_url = resolve_google_news_url(art['link'])
+            context = fetch_article_context(resolved_url, fallback_desc=art.get('description', ''))
+            articles_list.append(f"[{i}] Publisher: {source} | Title: {art['title']}\nSnippet: {context}\n")
             
         articles_text = "\n".join(articles_list)
         
         model = genai.GenerativeModel("gemini-1.5-flash")
         
-        prompt = f"""You are a professional editor curating a daily briefing on {topic}.
-Here is a list of candidate articles. Your task is to score them for importance, quality, and relevance, and completely eliminate duplicate stories.
+        prompt = f"""You are a strict, professional executive editor curating a daily briefing on {topic}.
+Here is a list of candidate articles with text snippets. Your task is to score them for importance, quality, and depth, and completely eliminate duplicate stories.
 
 Rules:
-1. Semantic Deduplication: Identify articles covering the exact same underlying event or story. From each group of identical stories, select ONLY the single best, most informative article. Discard the rest.
-2. Scoring: For the unique articles you keep, assign a score from 1 to 100 based on how important and high-impact the article is.
+1. Semantic Deduplication: Identify articles covering the exact same underlying event or story. From each group of identical stories, select ONLY the single best, most in-depth article. Discard the rest.
+2. Quality Scoring: For the unique articles you keep, assign a score from 1 to 100 based on how important and high-impact the article is.
+   - FAVOR renowned, analytical sources (e.g. FT, Economist, major broadsheets).
+   - PRIORITIZE deep-dive, long-form journalism and significant policy/regulatory changes.
+   - HEAVILY PENALIZE short "live blog" updates, superficial listicles, wire snippets, or generic opinion columns.
 
 Return your evaluation in a JSON format containing a list of dictionaries with 'index' and 'score'.
 Example:

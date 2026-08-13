@@ -3,3 +3,4 @@ googlenewsdecoder>=0.1.5
 google-generativeai>=0.3.0
 python-dotenv>=1.0.0
 requests-oauthlib
+trafilatura>=1.6.0
