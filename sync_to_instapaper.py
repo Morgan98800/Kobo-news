@@ -35,7 +35,7 @@ def is_within_24_hours(pub_date_str):
         return True
 
 def fetch_rss_items(url):
-    """Fetch and parse RSS items from a feed URL."""
+    """Fetch and parse RSS and Atom items from a feed URL."""
     context = ssl._create_unverified_context()
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
     items = []
@@ -43,26 +43,54 @@ def fetch_rss_items(url):
         with urllib.request.urlopen(req, context=context) as response:
             xml_data = response.read()
             root = ET.fromstring(xml_data)
+            
+            # 1. Standard RSS items
             for item in root.findall('.//item'):
                 title = item.find('title')
                 link = item.find('link')
                 desc = item.find('description')
                 pub_date = item.find('pubDate')
                 
-                title_text = title.text if title is not None else ""
-                link_text = link.text if link is not None else ""
-                desc_text = desc.text if desc is not None else ""
-                pub_date_text = pub_date.text if pub_date is not None else ""
+                title_text = title.text if title is not None and title.text else ""
+                link_text = link.text if link is not None and link.text else ""
+                desc_text = desc.text if desc is not None and desc.text else ""
+                pub_date_text = pub_date.text if pub_date is not None and pub_date.text else ""
                 
-                # Simple cleanup of HTML in description if present
                 if desc_text:
                     import re
                     desc_text = re.sub('<[^<]+?>', '', desc_text).strip()
 
                 if is_within_24_hours(pub_date_text):
                     items.append({
-                        'title': title_text,
-                        'link': link_text,
+                        'title': title_text.strip(),
+                        'link': link_text.strip(),
+                        'description': desc_text,
+                        'pub_date': pub_date_text
+                    })
+                    
+            # 2. Atom entries (e.g. The Verge, Ars Technica)
+            ns = {'atom': 'http://www.w3.org/2005/Atom'}
+            for entry in root.findall('.//atom:entry', ns) + root.findall('.//entry'):
+                title = entry.find('atom:title', ns) if entry.find('atom:title', ns) is not None else entry.find('title')
+                link = entry.find('atom:link', ns) if entry.find('atom:link', ns) is not None else entry.find('link')
+                summary = entry.find('atom:summary', ns) or entry.find('atom:content', ns) or entry.find('summary') or entry.find('content')
+                pub_date = entry.find('atom:published', ns) or entry.find('atom:updated', ns) or entry.find('published') or entry.find('updated')
+                
+                title_text = title.text if title is not None and title.text else ""
+                link_text = ""
+                if link is not None:
+                    link_text = link.get('href') or link.text or ""
+                desc_text = summary.text if summary is not None and summary.text else ""
+                pub_date_text = pub_date.text if pub_date is not None and pub_date.text else ""
+                
+                if desc_text:
+                    import re
+                    desc_text = re.sub('<[^<]+?>', '', desc_text).strip()
+                    
+                if is_within_24_hours(pub_date_text):
+                    items.append({
+                        'title': title_text.strip(),
+                        'link': link_text.strip(),
                         'description': desc_text,
                         'pub_date': pub_date_text
                     })
@@ -315,6 +343,12 @@ Return only the raw JSON array. Do not include markdown formatting or backticks 
             a['_score'] = -1
         return scored
 
+PREMIER_PUBLISHERS = {
+    "ft", "lemonde", "politico", "economist", "reuters", "bloomberg", 
+    "wsj", "theverge", "arstechnica", "technologyreview", "euractiv", 
+    "foreignaffairs", "foreignpolicy", "lesechos", "lefigaro", "wired"
+}
+
 def extract_source_domain(article):
     """Extract clean source publisher name/domain from Google News title or direct link."""
     link = article.get('link', '')
@@ -333,7 +367,7 @@ def extract_source_domain(article):
             domain = domain[4:]
         source = domain
 
-    # Normalize brand variants (e.g. politico.com / politico.eu / politico -> politico)
+    # Normalize brand variants
     if "politico" in source:
         return "politico"
     if "lemonde" in source or "le monde" in source:
@@ -342,11 +376,25 @@ def extract_source_domain(article):
         return "ft"
     if "economist" in source:
         return "economist"
+    if "theverge" in source or "the verge" in source:
+        return "theverge"
+    if "arstechnica" in source or "ars technica" in source:
+        return "arstechnica"
+    if "reuters" in source:
+        return "reuters"
+    if "bloomberg" in source:
+        return "bloomberg"
+    if "wsj" in source or "wall street journal" in source:
+        return "wsj"
+    if "euractiv" in source:
+        return "euractiv"
+    if "technologyreview" in source or "technology review" in source or "mit tech" in source:
+        return "technologyreview"
 
     return source
 
 def score_articles(articles, profile="political_risk"):
-    """Scores articles based on topic-specific keyword matching."""
+    """Scores articles based on topic-specific keyword matching and publisher prestige."""
     import re
     
     if profile == "political_risk":
@@ -430,6 +478,15 @@ def score_articles(articles, profile="political_risk"):
                     score += m * weights[cat]
                     if r.search(art.get('title', '')):
                         score += weights[cat]
+                        
+        domain = extract_source_domain(art)
+        # Heavy quality boost for premier publications
+        if domain in PREMIER_PUBLISHERS:
+            score += 35
+        else:
+            # Deprioritize unknown regional micro-blogs
+            score -= 20
+            
         art_copy = art.copy()
         art_copy['_score'] = score
         scored.append(art_copy)
@@ -652,9 +709,9 @@ def main():
             "https://www.economist.com/the-world-this-week/rss.xml",
             "https://www.economist.com/europe/rss.xml",
             "https://www.economist.com/finance-and-economics/rss.xml",
-            "https://news.google.com/rss/search?q=EU+news+OR+EU+policy+OR+Europe+politics&hl=en-US&gl=US&ceid=US:en",
             "https://news.google.com/rss/search?q=site:lemonde.fr+international+OR+politique+OR+Europe&hl=fr&gl=FR&ceid=FR:fr",
-            "https://news.google.com/rss/search?q=site:ft.com+EU+OR+Europe+OR+politics&hl=en-US&gl=US&ceid=US:en"
+            "https://news.google.com/rss/search?q=site:ft.com+EU+OR+Europe+OR+politics&hl=en-US&gl=US&ceid=US:en",
+            "https://news.google.com/rss/search?q=(site:reuters.com+OR+site:bloomberg.com+OR+site:wsj.com)+AND+(%22European+Union%22+OR+%22EU+policy%22+OR+NATO+OR+tariffs)&hl=en-US&gl=US&ceid=US:en"
         ]
         all_articles = []
         for feed in pol_feeds:
@@ -704,19 +761,22 @@ def main():
             "https://www.economist.com/the-world-this-week/rss.xml",
             "https://www.economist.com/europe/rss.xml",
             "https://www.economist.com/finance-and-economics/rss.xml",
-            "https://news.google.com/rss/search?q=EU+news+OR+EU+policy+OR+Europe+politics&hl=en-US&gl=US&ceid=US:en",
             "https://news.google.com/rss/search?q=site:lemonde.fr+international+OR+politique+OR+Europe&hl=fr&gl=FR&ceid=FR:fr",
-            "https://news.google.com/rss/search?q=site:ft.com+EU+OR+Europe+OR+politics&hl=en-US&gl=US&ceid=US:en"
+            "https://news.google.com/rss/search?q=site:ft.com+EU+OR+Europe+OR+politics&hl=en-US&gl=US&ceid=US:en",
+            "https://news.google.com/rss/search?q=(site:reuters.com+OR+site:bloomberg.com+OR+site:wsj.com)+AND+(%22European+Union%22+OR+%22EU+policy%22+OR+NATO+OR+tariffs)&hl=en-US&gl=US&ceid=US:en"
         ]
         ai_policy_feeds = [
-            "https://news.google.com/rss/search?q=%22AI+regulation%22+OR+%22AI+Act%22+OR+%22AI+policy%22+OR+%22AI+export+controls%22+OR+%22AI+governance%22+OR+%22chips+act%22&hl=en-US&gl=US&ceid=US:en",
+            "https://news.google.com/rss/search?q=site:politico.eu+%22AI+Act%22+OR+%22AI+regulation%22+OR+%22chips%22&hl=en-US&gl=US&ceid=US:en",
             "https://news.google.com/rss/search?q=site:lemonde.fr+%22intelligence+artificielle%22+OR+IA&hl=fr&gl=FR&ceid=FR:fr",
-            "https://news.google.com/rss/search?q=site:ft.com+%22artificial+intelligence%22+OR+%22AI+regulation%22&hl=en-US&gl=US&ceid=US:en"
+            "https://news.google.com/rss/search?q=site:ft.com+%22artificial+intelligence%22+OR+%22AI+regulation%22&hl=en-US&gl=US&ceid=US:en",
+            "https://news.google.com/rss/search?q=(site:reuters.com+OR+site:bloomberg.com+OR+site:wsj.com)+AND+(%22AI+Act%22+OR+%22AI+regulation%22+OR+%22semiconductors%22)&hl=en-US&gl=US&ceid=US:en"
         ]
         ai_industry_feeds = [
             "https://www.ft.com/rss/technology",
             "https://www.economist.com/science-and-technology/rss.xml",
-            "https://news.google.com/rss/search?q=%22artificial+intelligence%22+OR+%22AI+model%22+OR+%22AI+industry%22+OR+OpenAI+OR+Anthropic&hl=en-US&gl=US&ceid=US:en"
+            "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
+            "https://arstechnica.com/tag/ai/feed/",
+            "https://news.google.com/rss/search?q=(site:reuters.com+OR+site:bloomberg.com+OR+site:wsj.com)+AND+(OpenAI+OR+Anthropic+OR+%22AI+model%22)&hl=en-US&gl=US&ceid=US:en"
         ]
         
         pol_raw, ai_pol_raw, ai_ind_raw = [], [], []
