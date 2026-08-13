@@ -29,6 +29,13 @@ jobs:
         env:
           INSTAPAPER_USERNAME: ${{ secrets.INSTAPAPER_USERNAME }}
           INSTAPAPER_PASSWORD: ${{ secrets.INSTAPAPER_PASSWORD }}
+          INSTAPAPER_KEY: ${{ secrets.INSTAPAPER_KEY }}
+          INSTAPAPER_SECRET: ${{ secrets.INSTAPAPER_SECRET }}
+          LEMONDE_USERNAME: ${{ secrets.LEMONDE_USERNAME }}
+          LEMONDE_PASSWORD: ${{ secrets.LEMONDE_PASSWORD }}
+          FT_USERNAME: ${{ secrets.FT_USERNAME }}
+          FT_PASSWORD: ${{ secrets.FT_PASSWORD }}
+          FT_COOKIE: ${{ secrets.FT_COOKIE }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python sync_to_instapaper.py --auto
 

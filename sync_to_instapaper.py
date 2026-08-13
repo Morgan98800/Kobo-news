@@ -89,7 +89,7 @@ def get_unlocked_archive_url(url):
     """
     paywalled_domains = [
         "ft.com", "wsj.com", "bloomberg.com", "economist.com", 
-        "foreignaffairs.com", "thetimes.co.uk", "nytimes.com", "telegraph.co.uk"
+        "foreignaffairs.com", "thetimes.co.uk", "nytimes.com", "telegraph.co.uk", "lemonde.fr"
     ]
     
     domain = urllib.parse.urlparse(url).netloc.lower()
@@ -113,8 +113,127 @@ def get_unlocked_archive_url(url):
             
     return url
 
+def fetch_lemonde_full_content(url):
+    """
+    Extracts the full subscriber HTML content from a Le Monde article URL
+    using the mobile API endpoint with image template placeholders fixed.
+    """
+    import re
+    match = re.search(r'_(\d+)_\d+\.html', url)
+    if not match:
+        match = re.search(r'_(\d+)(?:\.html)?$', url)
+    if not match:
+        return None
+        
+    article_id = match.group(1)
+    api_url = f"https://apps.lemonde.fr/aec/v1/premium-android-phone/article/{article_id}"
+    headers = {
+        'User-Agent': 'LeMonde/9.20.1 (Android; 14)',
+        'X-Lmd-Token': 'TWPLMOLMO',
+        'Accept': 'application/json'
+    }
+    
+    try:
+        import requests
+        resp = requests.get(api_url, headers=headers, timeout=8)
+        if resp.status_code == 200:
+            data = resp.json()
+            content = data.get('template_vars', {}).get('content', '')
+            title = data.get('template_vars', {}).get('seo_title') or data.get('template_vars', {}).get('title', '')
+            if content:
+                # Fix image template placeholders
+                content = content.replace('%7B%7Bwidth%7D%7D', '1000').replace('{{width}}', '1000')
+                content = content.replace('%7B%7Bheight%7D%7D', '600').replace('{{height}}', '600')
+                
+                full_html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{title}</title>
+</head>
+<body>
+{content}
+</body>
+</html>"""
+                return {
+                    'title': title,
+                    'html': full_html
+                }
+    except Exception as e:
+        print(f"  [Le Monde Extractor] Error extracting article {article_id}: {e}", file=sys.stderr)
+        
+    return None
+
+def fetch_ft_full_content(url):
+    """
+    Extracts the full subscriber HTML content from a Financial Times article URL
+    using the FT_COOKIE / FTSession_s if available.
+    """
+    cookie = os.environ.get("FT_COOKIE")
+    if not cookie:
+        return None
+        
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cookie': cookie if 'FTSession' in cookie else f"FTSession_s={cookie}; FTSession={cookie}"
+    }
+    
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            body = soup.find('div', {'id': 'article-body'}) or soup.find('article')
+            title_tag = soup.find('h1') or soup.find('meta', property='og:title')
+            title = title_tag.get_text(strip=True) if title_tag else "Financial Times"
+            if body and len(body.get_text(strip=True)) > 400:
+                full_html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{title}</title>
+</head>
+<body>
+<h1>{title}</h1>
+{str(body)}
+</body>
+</html>"""
+                return {
+                    'title': title,
+                    'html': full_html
+                }
+    except Exception as e:
+        print(f"  [FT Extractor] Error extracting article: {e}", file=sys.stderr)
+        
+    return None
+
 def fetch_article_context(url, fallback_desc=""):
-    """Fetch full text using trafilatura, return a 1500-char snippet."""
+    """Fetch full text using trafilatura or direct extractors, return a 1500-char snippet."""
+    if "lemonde.fr" in url:
+        lm_data = fetch_lemonde_full_content(url)
+        if lm_data and lm_data.get('html'):
+            try:
+                import trafilatura
+                extracted = trafilatura.extract(lm_data['html'])
+                if extracted:
+                    return extracted[:1500]
+            except Exception:
+                pass
+
+    if "ft.com" in url:
+        ft_data = fetch_ft_full_content(url)
+        if ft_data and ft_data.get('html'):
+            try:
+                import trafilatura
+                extracted = trafilatura.extract(ft_data['html'])
+                if extracted:
+                    return extracted[:1500]
+            except Exception:
+                pass
+
     try:
         import urllib.request
         import ssl
@@ -217,6 +336,12 @@ def extract_source_domain(article):
     # Normalize brand variants (e.g. politico.com / politico.eu / politico -> politico)
     if "politico" in source:
         return "politico"
+    if "lemonde" in source or "le monde" in source:
+        return "lemonde"
+    if "ft.com" in source or "financial times" in source:
+        return "ft"
+    if "economist" in source:
+        return "economist"
 
     return source
 
@@ -406,8 +531,70 @@ def curate_all_articles(pol_articles, ai_policy_articles, ai_industry_articles, 
     
     return selected_pol + selected_ai_pol + selected_ai_ind
 
-def sync_to_instapaper(username, password, url, title=None):
-    """Add a URL to Instapaper via Simple API."""
+_oauth_session_cache = None
+
+def get_instapaper_oauth_session(consumer_key, consumer_secret, username, password):
+    """Obtains and caches an OAuth 1.0 session for the Instapaper Full API."""
+    global _oauth_session_cache
+    if _oauth_session_cache is not None:
+        return _oauth_session_cache
+        
+    try:
+        import requests
+        from requests_oauthlib import OAuth1
+        auth = OAuth1(consumer_key, consumer_secret)
+        token_url = "https://www.instapaper.com/api/1.1/oauth/access_token"
+        data = {
+            'x_auth_username': username,
+            'x_auth_password': password,
+            'x_auth_mode': 'client_auth'
+        }
+        resp = requests.post(token_url, auth=auth, data=data, timeout=10)
+        if resp.status_code == 200:
+            params = dict(urllib.parse.parse_qsl(resp.text))
+            oauth_token = params.get('oauth_token')
+            oauth_token_secret = params.get('oauth_token_secret')
+            if oauth_token and oauth_token_secret:
+                _oauth_session_cache = OAuth1(consumer_key, consumer_secret, oauth_token, oauth_token_secret)
+                return _oauth_session_cache
+        else:
+            print(f"Warning: Instapaper OAuth authentication failed: {resp.status_code} {resp.text}", file=sys.stderr)
+    except Exception as e:
+        print(f"Warning: Instapaper OAuth initialization failed: {e}", file=sys.stderr)
+    return None
+
+def sync_to_instapaper(username, password, url, title=None, raw_content=None):
+    """
+    Add a URL or raw article content to Instapaper.
+    Uses Instapaper Full OAuth API if raw_content or OAuth credentials are present,
+    otherwise falls back to the Simple API.
+    """
+    consumer_key = os.environ.get("INSTAPAPER_KEY")
+    consumer_secret = os.environ.get("INSTAPAPER_SECRET")
+    
+    # 1. Try Full API with raw HTML content (Bypasses server paywall fetching)
+    if consumer_key and consumer_secret and raw_content:
+        oauth_auth = get_instapaper_oauth_session(consumer_key, consumer_secret, username, password)
+        if oauth_auth:
+            try:
+                import requests
+                add_url = "https://www.instapaper.com/api/1.1/bookmarks/add"
+                payload = {
+                    'url': url,
+                    'content': raw_content
+                }
+                if title:
+                    payload['title'] = title
+                res = requests.post(add_url, auth=oauth_auth, data=payload, timeout=15)
+                if res.status_code == 200:
+                    print(f"Successfully synced [Full-Text OAuth]: {title or url}")
+                    return True
+                else:
+                    print(f"OAuth bookmark add failed ({res.status_code}): {res.text}. Falling back to Simple API...", file=sys.stderr)
+            except Exception as e:
+                print(f"OAuth bookmark add error ({e}). Falling back to Simple API...", file=sys.stderr)
+
+    # 2. Simple API fallback
     data = {
         'username': username,
         'password': password,
@@ -461,7 +648,13 @@ def main():
     if args.list:
         pol_feeds = [
             "https://www.politico.eu/section/policy/feed/",
-            "https://news.google.com/rss/search?q=EU+news+OR+EU+policy+OR+Europe+politics&hl=en-US&gl=US&ceid=US:en"
+            "https://www.ft.com/rss/world/europe",
+            "https://www.economist.com/the-world-this-week/rss.xml",
+            "https://www.economist.com/europe/rss.xml",
+            "https://www.economist.com/finance-and-economics/rss.xml",
+            "https://news.google.com/rss/search?q=EU+news+OR+EU+policy+OR+Europe+politics&hl=en-US&gl=US&ceid=US:en",
+            "https://news.google.com/rss/search?q=site:lemonde.fr+international+OR+politique+OR+Europe&hl=fr&gl=FR&ceid=FR:fr",
+            "https://news.google.com/rss/search?q=site:ft.com+EU+OR+Europe+OR+politics&hl=en-US&gl=US&ceid=US:en"
         ]
         all_articles = []
         for feed in pol_feeds:
@@ -483,7 +676,23 @@ def main():
         success_count = 0
         for url in args.urls:
             resolved_url = resolve_google_news_url(url)
-            if sync_to_instapaper(username, password, resolved_url):
+            raw_content = None
+            title = None
+            if "lemonde.fr" in resolved_url:
+                lm_data = fetch_lemonde_full_content(resolved_url)
+                if lm_data:
+                    raw_content = lm_data['html']
+                    title = lm_data['title']
+                    print(f"  [Le Monde Extracted] Full article retrieved ({len(raw_content)} bytes)")
+            elif "ft.com" in resolved_url:
+                ft_data = fetch_ft_full_content(resolved_url)
+                if ft_data:
+                    raw_content = ft_data['html']
+                    title = ft_data['title']
+                    print(f"  [FT Extracted] Full article retrieved ({len(raw_content)} bytes)")
+            
+            final_url = get_unlocked_archive_url(resolved_url) if not raw_content else resolved_url
+            if sync_to_instapaper(username, password, final_url, title=title, raw_content=raw_content):
                 success_count += 1
         print(f"Synced {success_count}/{len(args.urls)} articles to Instapaper.")
         
@@ -491,12 +700,22 @@ def main():
         print("Fetching RSS feeds across categories...")
         pol_feeds = [
             "https://www.politico.eu/section/policy/feed/",
-            "https://news.google.com/rss/search?q=EU+news+OR+EU+policy+OR+Europe+politics&hl=en-US&gl=US&ceid=US:en"
+            "https://www.ft.com/rss/world/europe",
+            "https://www.economist.com/the-world-this-week/rss.xml",
+            "https://www.economist.com/europe/rss.xml",
+            "https://www.economist.com/finance-and-economics/rss.xml",
+            "https://news.google.com/rss/search?q=EU+news+OR+EU+policy+OR+Europe+politics&hl=en-US&gl=US&ceid=US:en",
+            "https://news.google.com/rss/search?q=site:lemonde.fr+international+OR+politique+OR+Europe&hl=fr&gl=FR&ceid=FR:fr",
+            "https://news.google.com/rss/search?q=site:ft.com+EU+OR+Europe+OR+politics&hl=en-US&gl=US&ceid=US:en"
         ]
         ai_policy_feeds = [
-            "https://news.google.com/rss/search?q=%22AI+regulation%22+OR+%22AI+Act%22+OR+%22AI+policy%22+OR+%22AI+export+controls%22+OR+%22AI+governance%22+OR+%22chips+act%22&hl=en-US&gl=US&ceid=US:en"
+            "https://news.google.com/rss/search?q=%22AI+regulation%22+OR+%22AI+Act%22+OR+%22AI+policy%22+OR+%22AI+export+controls%22+OR+%22AI+governance%22+OR+%22chips+act%22&hl=en-US&gl=US&ceid=US:en",
+            "https://news.google.com/rss/search?q=site:lemonde.fr+%22intelligence+artificielle%22+OR+IA&hl=fr&gl=FR&ceid=FR:fr",
+            "https://news.google.com/rss/search?q=site:ft.com+%22artificial+intelligence%22+OR+%22AI+regulation%22&hl=en-US&gl=US&ceid=US:en"
         ]
         ai_industry_feeds = [
+            "https://www.ft.com/rss/technology",
+            "https://www.economist.com/science-and-technology/rss.xml",
             "https://news.google.com/rss/search?q=%22artificial+intelligence%22+OR+%22AI+model%22+OR+%22AI+industry%22+OR+OpenAI+OR+Anthropic&hl=en-US&gl=US&ceid=US:en"
         ]
         
@@ -538,9 +757,26 @@ def main():
             title = art.get('title')
             url = art.get('link')
             resolved_url = resolve_google_news_url(url)
-            final_url = get_unlocked_archive_url(resolved_url)
-            print(f"- Adding: {title} ({final_url})")
-            if sync_to_instapaper(username, password, final_url, title):
+            
+            raw_content = None
+            if "lemonde.fr" in resolved_url:
+                lm_data = fetch_lemonde_full_content(resolved_url)
+                if lm_data:
+                    raw_content = lm_data['html']
+                    if not title:
+                        title = lm_data['title']
+                    print(f"  [Le Monde Extracted] Full article retrieved ({len(raw_content)} bytes)")
+            elif "ft.com" in resolved_url:
+                ft_data = fetch_ft_full_content(resolved_url)
+                if ft_data:
+                    raw_content = ft_data['html']
+                    if not title:
+                        title = ft_data['title']
+                    print(f"  [FT Extracted] Full article retrieved ({len(raw_content)} bytes)")
+            
+            final_url = get_unlocked_archive_url(resolved_url) if not raw_content else resolved_url
+            print(f"- Adding: {title or resolved_url} ({final_url})")
+            if sync_to_instapaper(username, password, final_url, title=title, raw_content=raw_content):
                 success_count += 1
                 
         print(f"Successfully curated and synced {success_count} articles to Instapaper.")

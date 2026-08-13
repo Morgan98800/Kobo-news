@@ -13,8 +13,9 @@
 **🇵🇹 Português**: Este é um script pessoal que seleciona automaticamente as melhores notícias políticas da UE e as sincroniza com o Instapaper para leitura offline num e-reader Kobo. Ele também exclui artigos antigos após 2 dias para economizar espaço.
 ## Features
 
-- **Multi-source fetching**: Aggregates news from Politico Europe, Euractiv, and Google News RSS (searching for `"EU news OR EU policy OR Europe politics"`).
-- **URL Resolving**: Automatically decodes Google News tracking/redirect links into their direct publisher URLs using `googlenewsdecoder`.
+- **Multi-source fetching**: Aggregates news from **Politico Europe**, **Le Monde**, **Financial Times**, **The Economist & Espresso**, and targeted Google News RSS feeds.
+- **Full-Text Subscriber Extraction**: Automatically fetches full subscriber HTML from *Le Monde* and *Financial Times*, uploading directly via Instapaper OAuth to prevent paywall truncation on Kobo.
+- **URL Resolving & Archive Bypasses**: Automatically decodes Google News tracking/redirect links into their direct publisher URLs using `googlenewsdecoder` and routes paywalled articles through archive mirrors.
 - **AI-curated selection**:
   - **Agent-driven**: The Antigravity agent fetches and selects the best articles using its own Gemini model, invoking the script with targeted URLs. No Gemini API key required!
   - **Standalone**: Run the script using your own `GEMINI_API_KEY` to let the script automatically query Gemini and sync.
@@ -40,12 +41,24 @@ Create a `.env` file in the root of this directory by copying `.env.example`:
 cp .env.example .env
 ```
 
-Edit the `.env` file and fill in your Instapaper credentials:
+Edit the `.env` file and fill in your credentials:
 
 ```ini
 # Instapaper Credentials
 INSTAPAPER_USERNAME=your_email@example.com
 INSTAPAPER_PASSWORD=your_instapaper_password
+
+# Instapaper Full API (OAuth 1.0)
+INSTAPAPER_KEY=your_key
+INSTAPAPER_SECRET=your_secret
+
+# Le Monde Credentials
+LEMONDE_USERNAME=your_lemonde_email@example.com
+LEMONDE_PASSWORD=your_lemonde_password
+
+# Financial Times Credentials
+FT_USERNAME=your_ft_email@example.com
+FT_PASSWORD=your_ft_password
 
 # Optional: Gemini API Key (Required ONLY for Standalone Mode)
 GEMINI_API_KEY=your_gemini_api_key_here
