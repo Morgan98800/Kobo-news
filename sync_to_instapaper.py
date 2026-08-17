@@ -705,13 +705,11 @@ def main():
     if args.list:
         pol_feeds = [
             "https://www.politico.eu/section/policy/feed/",
-            "https://www.ft.com/rss/world/europe",
             "https://www.economist.com/the-world-this-week/rss.xml",
             "https://www.economist.com/europe/rss.xml",
             "https://www.economist.com/finance-and-economics/rss.xml",
             "https://news.google.com/rss/search?q=site:lemonde.fr+international+OR+politique+OR+Europe&hl=fr&gl=FR&ceid=FR:fr",
-            "https://news.google.com/rss/search?q=site:ft.com+EU+OR+Europe+OR+politics&hl=en-US&gl=US&ceid=US:en",
-            "https://news.google.com/rss/search?q=(site:reuters.com+OR+site:bloomberg.com+OR+site:wsj.com)+AND+(%22European+Union%22+OR+%22EU+policy%22+OR+NATO+OR+tariffs)&hl=en-US&gl=US&ceid=US:en"
+            "https://news.google.com/rss/search?q=site:euractiv.com+AND+(EU+OR+policy+OR+commission+OR+parliament)&hl=en-US&gl=US&ceid=US:en"
         ]
         all_articles = []
         for feed in pol_feeds:
@@ -757,26 +755,22 @@ def main():
         print("Fetching RSS feeds across categories...")
         pol_feeds = [
             "https://www.politico.eu/section/policy/feed/",
-            "https://www.ft.com/rss/world/europe",
             "https://www.economist.com/the-world-this-week/rss.xml",
             "https://www.economist.com/europe/rss.xml",
             "https://www.economist.com/finance-and-economics/rss.xml",
             "https://news.google.com/rss/search?q=site:lemonde.fr+international+OR+politique+OR+Europe&hl=fr&gl=FR&ceid=FR:fr",
-            "https://news.google.com/rss/search?q=site:ft.com+EU+OR+Europe+OR+politics&hl=en-US&gl=US&ceid=US:en",
-            "https://news.google.com/rss/search?q=(site:reuters.com+OR+site:bloomberg.com+OR+site:wsj.com)+AND+(%22European+Union%22+OR+%22EU+policy%22+OR+NATO+OR+tariffs)&hl=en-US&gl=US&ceid=US:en"
+            "https://news.google.com/rss/search?q=site:euractiv.com+AND+(EU+OR+policy+OR+commission+OR+parliament)&hl=en-US&gl=US&ceid=US:en"
         ]
         ai_policy_feeds = [
             "https://news.google.com/rss/search?q=site:politico.eu+%22AI+Act%22+OR+%22AI+regulation%22+OR+%22chips%22&hl=en-US&gl=US&ceid=US:en",
             "https://news.google.com/rss/search?q=site:lemonde.fr+%22intelligence+artificielle%22+OR+IA&hl=fr&gl=FR&ceid=FR:fr",
-            "https://news.google.com/rss/search?q=site:ft.com+%22artificial+intelligence%22+OR+%22AI+regulation%22&hl=en-US&gl=US&ceid=US:en",
-            "https://news.google.com/rss/search?q=(site:reuters.com+OR+site:bloomberg.com+OR+site:wsj.com)+AND+(%22AI+Act%22+OR+%22AI+regulation%22+OR+%22semiconductors%22)&hl=en-US&gl=US&ceid=US:en"
+            "https://news.google.com/rss/search?q=site:euractiv.com+%22artificial+intelligence%22+OR+%22AI+Act%22&hl=en-US&gl=US&ceid=US:en"
         ]
         ai_industry_feeds = [
-            "https://www.ft.com/rss/technology",
-            "https://www.economist.com/science-and-technology/rss.xml",
             "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
             "https://arstechnica.com/tag/ai/feed/",
-            "https://news.google.com/rss/search?q=(site:reuters.com+OR+site:bloomberg.com+OR+site:wsj.com)+AND+(OpenAI+OR+Anthropic+OR+%22AI+model%22)&hl=en-US&gl=US&ceid=US:en"
+            "https://www.economist.com/science-and-technology/rss.xml",
+            "https://news.google.com/rss/search?q=site:arstechnica.com+OR+site:theverge.com+AND+(OpenAI+OR+Anthropic+OR+Mistral)&hl=en-US&gl=US&ceid=US:en"
         ]
         
         pol_raw, ai_pol_raw, ai_ind_raw = [], [], []
@@ -811,7 +805,7 @@ def main():
             print("Selecting 8 articles with keyword scoring & source diversity...")
             selected = curate_all_articles(pol_deduped, ai_pol_deduped, ai_ind_deduped, use_gemini=False)
             
-        print("Resolving and syncing selected 8 articles...")
+        print("Resolving and syncing selected articles with full-text verification...")
         success_count = 0
         for art in selected:
             title = art.get('title')
@@ -825,7 +819,7 @@ def main():
                     raw_content = lm_data['html']
                     if not title:
                         title = lm_data['title']
-                    print(f"  [Le Monde Extracted] Full article retrieved ({len(raw_content)} bytes)")
+                    print(f"  [Le Monde Extracted] Full subscriber article retrieved ({len(raw_content)} bytes)")
             elif "ft.com" in resolved_url:
                 ft_data = fetch_ft_full_content(resolved_url)
                 if ft_data:
@@ -833,6 +827,15 @@ def main():
                     if not title:
                         title = ft_data['title']
                     print(f"  [FT Extracted] Full article retrieved ({len(raw_content)} bytes)")
+                else:
+                    # Check archive snapshot
+                    arch_url = get_unlocked_archive_url(resolved_url)
+                    if arch_url != resolved_url:
+                        resolved_url = arch_url
+                        print(f"  [FT Archive Mirror] {resolved_url}")
+                    else:
+                        print(f"  [FT Skipped] No subscriber session or archive mirror for {title}. Skipping paywall stub.", file=sys.stderr)
+                        continue
             
             final_url = get_unlocked_archive_url(resolved_url) if not raw_content else resolved_url
             print(f"- Adding: {title or resolved_url} ({final_url})")
