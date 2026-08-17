@@ -233,25 +233,35 @@ def fetch_ft_full_content(url):
                     'title': title,
                     'html': full_html
                 }
+    except Exception as e:
+        print(f"  [FT Extractor] Error extracting article: {e}", file=sys.stderr)
+        
+    return None
+
 def fetch_economist_full_content(url):
     """
     Extracts the full subscriber HTML content from an Economist article URL
-    using ECONOMIST_COOKIE if available.
+    using ECONOMIST_COOKIE and curl_cffi with Chrome impersonation.
     """
     cookie = os.environ.get("ECONOMIST_COOKIE")
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
     }
     if cookie:
         headers['Cookie'] = cookie
         
     try:
-        import requests
-        from bs4 import BeautifulSoup
-        resp = requests.get(url, headers=headers, timeout=10)
+        try:
+            from curl_cffi import requests as cffi_requests
+            resp = cffi_requests.get(url, headers=headers, impersonate="chrome124", timeout=15)
+        except Exception:
+            import requests
+            headers['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+            resp = requests.get(url, headers=headers, timeout=12)
+            
         if resp.status_code == 200:
+            from bs4 import BeautifulSoup
             soup = BeautifulSoup(resp.text, 'html.parser')
             
             # 1. Try __NEXT_DATA__ JSON payload
@@ -266,8 +276,8 @@ def fetch_economist_full_content(url):
                     if body_parts and len(body_parts) > 2:
                         html_pieces = []
                         for part in body_parts:
-                            if isinstance(part, dict) and part.get('type') == 'paragraph':
-                                html_pieces.append(f"<p>{part.get('text', '')}</p>")
+                            if isinstance(part, dict) and part.get('textHtml'):
+                                html_pieces.append(f"<p>{part.get('textHtml')}</p>")
                             elif isinstance(part, dict) and part.get('text'):
                                 html_pieces.append(f"<p>{part.get('text')}</p>")
                         if html_pieces:

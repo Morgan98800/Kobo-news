@@ -1,7 +1,20 @@
 {
-  "last_updated": "August 17, 2026 at 14:31 UTC",
-  "total_articles": 22,
+  "last_updated": "August 17, 2026 at 14:51 UTC",
+  "total_articles": 23,
   "articles": [
+    {
+      "id": 2034668099,
+      "title": "How the anti-AfD firewall broke German politics",
+      "url": "https://www.economist.com/europe/2026/08/16/how-the-anti-afd-firewall-broke-german-politics",
+      "description": "",
+      "time": 1786978279,
+      "formatted_date": "August 17, 2026 - 14:51 UTC",
+      "publisher": "The Economist",
+      "tag": "economist",
+      "color": "#e3120b",
+      "lang": "EN",
+      "starred": true
+    },
     {
       "id": 2034664178,
       "title": "Anthropic explains how Claude’s invisible text watermarks will work - The Verge",
