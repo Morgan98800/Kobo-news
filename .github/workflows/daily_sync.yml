@@ -38,6 +38,7 @@ jobs:
           FT_USERNAME: ${{ secrets.FT_USERNAME }}
           FT_PASSWORD: ${{ secrets.FT_PASSWORD }}
           FT_COOKIE: ${{ secrets.FT_COOKIE }}
+          ECONOMIST_COOKIE: ${{ secrets.ECONOMIST_COOKIE }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python sync_to_instapaper.py --auto
 

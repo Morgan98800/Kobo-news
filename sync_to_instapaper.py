@@ -233,8 +233,58 @@ def fetch_ft_full_content(url):
                     'title': title,
                     'html': full_html
                 }
+def fetch_economist_full_content(url):
+    """
+    Extracts the full subscriber HTML content from an Economist article URL
+    using ECONOMIST_COOKIE if available.
+    """
+    cookie = os.environ.get("ECONOMIST_COOKIE")
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+    }
+    if cookie:
+        headers['Cookie'] = cookie
+        
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            
+            # 1. Try __NEXT_DATA__ JSON payload
+            next_data = soup.find('script', {'id': '__NEXT_DATA__'})
+            if next_data:
+                try:
+                    import json
+                    data = json.loads(next_data.string)
+                    content = data.get('props', {}).get('pageProps', {}).get('content', {})
+                    headline = content.get('headline') or data.get('props', {}).get('pageProps', {}).get('headline', '')
+                    body_parts = content.get('body', [])
+                    if body_parts and len(body_parts) > 2:
+                        html_pieces = []
+                        for part in body_parts:
+                            if isinstance(part, dict) and part.get('type') == 'paragraph':
+                                html_pieces.append(f"<p>{part.get('text', '')}</p>")
+                            elif isinstance(part, dict) and part.get('text'):
+                                html_pieces.append(f"<p>{part.get('text')}</p>")
+                        if html_pieces:
+                            full_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>{headline}</title></head><body><h1>{headline}</h1>{''.join(html_pieces)}</body></html>"""
+                            return {'title': headline or "The Economist", 'html': full_html}
+                except Exception:
+                    pass
+
+            # 2. Try HTML article body
+            body = soup.find('article') or soup.find('div', {'class': lambda c: c and 'article__body' in c})
+            title_tag = soup.find('h1')
+            title = title_tag.get_text(strip=True) if title_tag else "The Economist"
+            if body and len(body.get_text(strip=True)) > 500:
+                full_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>{title}</title></head><body><h1>{title}</h1>{str(body)}</body></html>"""
+                return {'title': title, 'html': full_html}
     except Exception as e:
-        print(f"  [FT Extractor] Error extracting article: {e}", file=sys.stderr)
+        print(f"  [Economist Extractor] Error extracting article: {e}", file=sys.stderr)
         
     return None
 
@@ -248,6 +298,18 @@ def fetch_article_context(url, fallback_desc=""):
                 extracted = trafilatura.extract(lm_data['html'])
                 if extracted:
                     return extracted[:1500]
+            except Exception:
+                pass
+    elif "economist.com" in url:
+        ec_data = fetch_economist_full_content(url)
+        if ec_data and ec_data.get('html'):
+            try:
+                import trafilatura
+                extracted = trafilatura.extract(ec_data['html'])
+                if extracted:
+                    return extracted[:1500]
+            except Exception:
+                pass
             except Exception:
                 pass
 
@@ -739,6 +801,12 @@ def main():
                     raw_content = lm_data['html']
                     title = lm_data['title']
                     print(f"  [Le Monde Extracted] Full article retrieved ({len(raw_content)} bytes)")
+            elif "economist.com" in resolved_url:
+                ec_data = fetch_economist_full_content(resolved_url)
+                if ec_data:
+                    raw_content = ec_data['html']
+                    title = ec_data['title']
+                    print(f"  [Economist Extracted] Full article retrieved ({len(raw_content)} bytes)")
             elif "ft.com" in resolved_url:
                 ft_data = fetch_ft_full_content(resolved_url)
                 if ft_data:
@@ -820,6 +888,18 @@ def main():
                     if not title:
                         title = lm_data['title']
                     print(f"  [Le Monde Extracted] Full subscriber article retrieved ({len(raw_content)} bytes)")
+            elif "economist.com" in resolved_url:
+                ec_data = fetch_economist_full_content(resolved_url)
+                if ec_data:
+                    raw_content = ec_data['html']
+                    if not title:
+                        title = ec_data['title']
+                    print(f"  [Economist Extracted] Full article retrieved ({len(raw_content)} bytes)")
+                else:
+                    arch_url = get_unlocked_archive_url(resolved_url)
+                    if arch_url != resolved_url:
+                        resolved_url = arch_url
+                        print(f"  [Economist Archive Mirror] {resolved_url}")
             elif "ft.com" in resolved_url:
                 ft_data = fetch_ft_full_content(resolved_url)
                 if ft_data:
