@@ -368,24 +368,85 @@ def gemini_score_articles(articles, topic, api_key):
         
         model = genai.GenerativeModel("gemini-1.5-flash")
         
-        prompt = f"""You are a strict, professional executive editor curating a daily briefing on {topic}.
-Here is a list of candidate articles with text snippets. Your task is to score them for importance, quality, and depth, and completely eliminate duplicate stories.
+        if topic == "political_risk":
+            prompt = """You are a strict, professional executive editor curating a daily political risk 
+briefing for an MSc student targeting political risk consulting (Control Risks, 
+Eurasia Group, Oxford Analytica).
 
-Rules:
-1. Semantic Deduplication: Identify articles covering the exact same underlying event or story. From each group of identical stories, select ONLY the single best, most in-depth article. Discard the rest.
-2. Quality Scoring: For the unique articles you keep, assign a score from 1 to 100 based on how important and high-impact the article is.
-   - FAVOR renowned, analytical sources (e.g. FT, Economist, major broadsheets).
-   - PRIORITIZE deep-dive, long-form journalism and significant policy/regulatory changes.
-   - HEAVILY PENALIZE short "live blog" updates, superficial listicles, wire snippets, or generic opinion columns.
+Here is a list of candidate articles with text snippets. Score them for topical 
+relevance AND quality, then eliminate duplicates.
 
-Return your evaluation in a JSON format containing a list of dictionaries with 'index' and 'score'.
+TOPIC PRIORITY (score relevance against this hierarchy — higher tiers matter more):
+1. EU institutional politics and policy-making (Commission, Council, Parliament, 
+   Court of Justice, legislative process, enlargement)
+2. Transatlantic relations (EU-US trade, defense/NATO, tech regulation, sanctions 
+   coordination, diplomatic disputes)
+3. EU-China relations and de-risking (FDI screening, export controls, supply chains, 
+   critical minerals, tariffs)
+4. Political risk and geoeconomics more broadly (sanctions regimes, sovereign risk, 
+   regulatory shifts affecting investors/business)
+5. Francophone Africa politics and EU/France relations with the region (Sahel, 
+   France's Africa policy, EU development/security engagement)
+
+Articles with no meaningful connection to any of these five tiers should score low 
+regardless of writing quality — do not let a well-written piece on an unrelated 
+topic (e.g. pure domestic politics of a member state with no EU/transatlantic 
+angle, human interest, sports, entertainment, routine announcements) outscore a 
+relevant one.
+
+RULES:
+1. Semantic Deduplication: Identify articles covering the exact same underlying 
+   event or story. From each group, keep ONLY the single best, most in-depth 
+   article. Discard the rest.
+2. Combined Scoring (1-100): Weight topic relevance (per the hierarchy above) 
+   FIRST, then quality within that. 
+   - FAVOR renowned, analytical sources (FT, Economist, major broadsheets).
+   - PRIORITIZE deep-dive, long-form journalism and significant policy/regulatory 
+     developments.
+   - HEAVILY PENALIZE short "live blog" updates, listicles, wire snippets, or 
+     generic opinion columns — even on-topic ones score low if superficial.
+
+Return your evaluation as a raw JSON array of dictionaries with 'index' and 'score'. 
+No markdown, no backticks, no preamble.
+
+Example:
+[
+  {"index": 0, "score": 95},
+  {"index": 3, "score": 88}
+]"""
+        elif topic == "ai_policy":
+            prompt = """You are a strict editor selecting ONE article on AI policy and regulation for a 
+briefing read by an MSc student in political risk, whose interest in AI is as a 
+regulatory/geopolitical variable — not general tech news.
+
+Score candidates on:
+- Relevance to AI governance, regulation, or geopolitics: EU AI Act implementation, 
+  US-China AI/chip competition, export controls on semiconductors, frontier model 
+  governance, national AI strategy, antitrust/competition action against AI firms.
+- Depth and quality: FAVOR long-form policy analysis over wire snippets or product 
+  announcements. A product launch or model release with no regulatory/policy angle 
+  scores low here even if AI-related — that belongs in general AI industry news, 
+  which this briefing does not include today.
+- Deduplicate: if multiple articles cover the same story, keep only the best one.
+
+Return a raw JSON array of dictionaries with 'index' and 'score'. No markdown, no 
+backticks, no preamble.
+
+Example:
+[
+  {"index": 0, "score": 95},
+  {"index": 3, "score": 88}
+]"""
+        else:
+            prompt = f"""You are a professional executive editor curating an industry briefing.
+Score candidates on importance and quality from 1 to 100, and eliminate duplicates.
+Return a raw JSON array of dictionaries with 'index' and 'score'. No markdown, no backticks, no preamble.
 Example:
 [
   {{"index": 0, "score": 95}},
   {{"index": 3, "score": 88}}
-]
-Return only the raw JSON array. Do not include markdown formatting or backticks around the JSON.
-"""
+]"""
+
         response = model.generate_content([prompt, articles_text])
         response_text = response.text.strip()
         if response_text.startswith("```"):
@@ -627,38 +688,43 @@ def select_articles_by_keyword_scoring(articles, top_n=5):
 def curate_all_articles(pol_articles, ai_policy_articles, ai_industry_articles, use_gemini=False, gemini_key=None):
     """
     Curates 8 total articles:
-    - 5 Political Risk / EU / Transatlantic (max 2 per domain)
-    - 2 AI Policy / Regulation (max 1 per domain)
-    - 1 General AI Industry News
+    - 7 Political Risk / EU / Transatlantic (max 2 per domain)
+    - 1 AI Policy / Regulation (max 2 per domain, with fallback to AI Industry)
     """
     global_sources = {}
     
-    # 1. Political Risk Pool (5 articles)
+    # 1. Political Risk Pool (7 articles)
     if use_gemini and gemini_key:
-        scored_pol = gemini_score_articles(pol_articles, "EU Politics & Policy", gemini_key)
+        scored_pol = gemini_score_articles(pol_articles, "political_risk", gemini_key)
     else:
         scored_pol = score_articles(pol_articles, profile="political_risk")
-    selected_pol = select_with_diversity(scored_pol, count=5, max_per_source=2, pool_name="Political Risk", global_sources=global_sources)
+    selected_pol = select_with_diversity(scored_pol, count=7, max_per_source=2, pool_name="Political Risk", global_sources=global_sources)
     
-    # 2. AI Policy Pool (2 articles)
+    # 2. AI Policy Pool (1 article)
     seen_urls = {a['link'] for a in selected_pol}
     filt_ai_pol = [a for a in ai_policy_articles if a['link'] not in seen_urls]
     if use_gemini and gemini_key:
-        scored_ai_pol = gemini_score_articles(filt_ai_pol, "AI Regulation & Policy", gemini_key)
+        scored_ai_pol = gemini_score_articles(filt_ai_pol, "ai_policy", gemini_key)
     else:
         scored_ai_pol = score_articles(filt_ai_pol, profile="ai_policy")
-    selected_ai_pol = select_with_diversity(scored_ai_pol, count=2, max_per_source=1, pool_name="AI Policy", global_sources=global_sources)
+        
+    # We want a high-quality AI Policy article (score >= 60). If none, we fall back.
+    high_quality_ai_pol = [a for a in scored_ai_pol if a.get('_score', 0) >= 60]
     
-    # 3. AI Industry Pool (1 article)
-    seen_urls.update({a['link'] for a in selected_ai_pol})
-    filt_ai_ind = [a for a in ai_industry_articles if a['link'] not in seen_urls]
-    if use_gemini and gemini_key:
-        scored_ai_ind = gemini_score_articles(filt_ai_ind, "AI Industry & Technology", gemini_key)
-    else:
-        scored_ai_ind = score_articles(filt_ai_ind, profile="ai_industry")
-    selected_ai_ind = select_with_diversity(scored_ai_ind, count=1, max_per_source=1, pool_name="AI Industry", global_sources=global_sources)
+    selected_ai_pol = select_with_diversity(high_quality_ai_pol, count=1, max_per_source=2, pool_name="AI Policy", global_sources=global_sources)
     
-    return selected_pol + selected_ai_pol + selected_ai_ind
+    if not selected_ai_pol:
+        print("No AI Policy article cleared the quality bar (score >= 60) or none available. Falling back to AI Industry.")
+        seen_urls.update({a['link'] for a in selected_pol})
+        filt_ai_ind = [a for a in ai_industry_articles if a['link'] not in seen_urls]
+        if use_gemini and gemini_key:
+            scored_ai_ind = gemini_score_articles(filt_ai_ind, "ai_industry", gemini_key)
+        else:
+            scored_ai_ind = score_articles(filt_ai_ind, profile="ai_industry")
+        selected_fallback = select_with_diversity(scored_ai_ind, count=1, max_per_source=2, pool_name="AI Industry", global_sources=global_sources)
+        return selected_pol + selected_fallback
+        
+    return selected_pol + selected_ai_pol
 
 _oauth_session_cache = None
 
